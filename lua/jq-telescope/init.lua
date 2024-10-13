@@ -7,13 +7,18 @@ local previewers = require("telescope.previewers")
 
 local M = {}
 
--- Function to execute jq command
+-- Function to execute jq command and capture both output and errors
 local function execute_jq(query, input)
-  local command = string.format("echo '%s' | jq '%s'", input, query)
+  local command = string.format("echo '%s' | jq '%s' 2>&1", input, query)
   local handle = io.popen(command)
   local result = handle:read("*a")
-  handle:close()
-  return result
+  local success, _, code = handle:close()
+  
+  if success then
+    return result, nil
+  else
+    return nil, result
+  end
 end
 
 -- Function to get current buffer content
@@ -26,8 +31,12 @@ end
 local jq_previewer = previewers.new_buffer_previewer({
   title = "jq Result",
   define_preview = function(self, entry)
-    local result = execute_jq(entry.value, entry.json_input)
-    vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(result, "\n"))
+    local result, error = execute_jq(entry.value, entry.json_input)
+    if result then
+      vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(result, "\n"))
+    else
+      vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split("Error: " .. error, "\n"))
+    end
   end,
 })
 
@@ -42,7 +51,7 @@ function M.jq_telescope()
         if prompt == "" then
           return {".", "keys"} -- Default suggestion
         else
-          return {prompt}
+          return {prompt} -- Return whatever was typed
         end
       end,
       entry_maker = function(entry)
@@ -61,11 +70,13 @@ function M.jq_telescope()
         actions.close(prompt_bufnr)
         
         -- Execute jq and replace buffer content
-        local result = execute_jq(selection.value, json_input)
-        vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, vim.split(result, "\n"))
-        
-        -- Optionally, print a message to confirm the action
-        vim.api.nvim_echo({{string.format("Applied jq query: %s", selection.value), "Normal"}}, true, {})
+        local result, error = execute_jq(selection.value, json_input)
+        if result then
+          vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, vim.split(result, "\n"))
+          vim.api.nvim_echo({{string.format("Applied jq query: %s", selection.value), "Normal"}}, true, {})
+        else
+          vim.api.nvim_echo({{string.format("Error in jq query: %s", error), "ErrorMsg"}}, true, {})
+        end
       end)
       return true
     end,
