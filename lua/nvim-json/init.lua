@@ -22,7 +22,12 @@ local function get_current_buffer_content()
 end
 
 function M:jq_telescope()
+	-- get current buffer content or the selected text	
+	-- local json_input = vim.fn.getreg("*")
+	-- if json_input == "" then
   local json_input = get_current_buffer_content()
+	-- end
+
   local original_bufnr = vim.api.nvim_get_current_buf()
   local this = self
 
@@ -33,7 +38,12 @@ function M:jq_telescope()
         if prompt == "" then
           return this.successful_queries
         else
-          return {prompt} -- Return whatever was typed
+					-- build a table from all this.successful_queries, along with prompt
+					local queries = {prompt}
+					for _, query in ipairs(this.successful_queries) do
+						table.insert(queries, query)
+					end
+					return queries
         end
       end,
       entry_maker = function(entry)
@@ -53,22 +63,38 @@ function M:jq_telescope()
        
 				local success_writer = function(lines)	
 				     vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, lines)
-			   end
-				 execute_jq(selection.value, json_input, success_writer)
+			  end
+				execute_jq(selection.value, json_input, success_writer)
       end)
       return true
     end,
     previewer = previewers.new_buffer_previewer({
       title = "jq Result",
       define_preview = function(self, entry)
-        -- Clear previous content and highlights
+				-- set json_query to entry.value trimmed from leading and trailing whitespaces
+				-- TODO: This is still not a canonical way to represent a jq query. i.e: 'keys  |length' will not
+				-- canonicalize to 'keys | length'. This is a limitation of the current implementation.
+				local json_query = entry.value
+				json_query = json_query:gsub("^%s*(.-)%s*$", "%1")
+
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {})
         vim.api.nvim_buf_clear_namespace(self.state.bufnr, ns_id, 0, -1)
 
+				-- Our success handler will both write the output to the buffer and add the query to successful_queries
+				-- for further suggestions
 				local success_writer = function(lines)	
 				  vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
+			    -- if successful_queries doesn't contain json_query, add it  
+					if not vim.tbl_contains(this.successful_queries, json_query) then
+						table.insert(this.successful_queries, json_query)
+					end
 				end
-				execute_jq(entry.value, json_input, success_writer)
+
+				local err_writer = function(lines)	
+				  vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
+				end
+
+				execute_jq(json_query, json_input, success_writer, err_writer)
       end,
     }),
   }):find()
