@@ -21,25 +21,6 @@ local function get_current_buffer_content()
   return table.concat(lines, "\n")
 end
 
--- Custom previewer
-local jq_previewer = previewers.new_buffer_previewer({
-  title = "jq Result",
-  define_preview = function(self, entry)
-    local result, error = execute_jq(entry.value, entry.json_input)
-    
-    -- Clear previous content and highlights
-    vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {})
-    vim.api.nvim_buf_clear_namespace(self.state.bufnr, ns_id, 0, -1)
-    
-    if result then
-      vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(result, "\n"))
-    else
-      local error_lines = vim.split("Error: " .. error, "\n")
-      vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, error_lines)
-    end
-  end,
-})
-
 function M:jq_telescope()
   local json_input = get_current_buffer_content()
   local original_bufnr = vim.api.nvim_get_current_buf()
@@ -50,7 +31,7 @@ function M:jq_telescope()
     finder = finders.new_dynamic({
       fn = function(prompt)
         if prompt == "" then
-          return self.successful_queries
+          return this.successful_queries
         else
           return {prompt} -- Return whatever was typed
         end
@@ -76,19 +57,31 @@ function M:jq_telescope()
           vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, vim.split(result, "\n"))
           vim.api.nvim_echo({{string.format("Applied jq query: %s", selection.value), "Normal"}}, true, {})
           -- Add the successful query to the suggestions if it's not already there
-          if not vim.tbl_contains(this.successful_queries, selection.value) then
-            table.insert(this.successful_queries, 1, selection.value)
-          end
         else
           vim.api.nvim_echo({{string.format("Error in jq query: %s", error), "ErrorMsg"}}, true, {})
         end
       end)
       return true
     end,
-    previewer = jq_previewer,
+    previewer = previewers.new_buffer_previewer({
+      title = "jq Result",
+      define_preview = function(self, entry)
+        local result, err = execute_jq(entry.value, entry.json_input, this.successful_queries)
+        
+        -- Clear previous content and highlights
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {})
+        vim.api.nvim_buf_clear_namespace(self.state.bufnr, ns_id, 0, -1)
+        
+        if result then
+          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(result, "\n"))
+        else
+          local error_lines = vim.split("Error: " .. error, "\n")
+          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, error_lines)
+        end
+      end,
+    }),
   }):find()
 end
-
 
 function M:setup()
     vim.api.nvim_create_user_command("JqTelescope", function()
