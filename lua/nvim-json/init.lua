@@ -6,7 +6,7 @@ local action_state = require("telescope.actions.state")
 local previewers = require("telescope.previewers")
 
 local jq = require("nvim-json.jq")
-local execute_jq = jq.execute_jq
+local execute_jq = jq.jq
 
 local M = {
     successful_queries = {".", "keys"}
@@ -50,34 +50,25 @@ function M:jq_telescope()
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         actions.close(prompt_bufnr)
-        
-        -- Execute jq and replace buffer content
-        local result, error = execute_jq(selection.value, json_input)
-        if result then
-          vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, vim.split(result, "\n"))
-          vim.api.nvim_echo({{string.format("Applied jq query: %s", selection.value), "Normal"}}, true, {})
-          -- Add the successful query to the suggestions if it's not already there
-        else
-          vim.api.nvim_echo({{string.format("Error in jq query: %s", error), "ErrorMsg"}}, true, {})
-        end
+       
+				local success_writer = function(lines)	
+				     vim.api.nvim_buf_set_lines(original_bufnr, 0, -1, false, lines)
+			   end
+				 execute_jq(selection.value, json_input, success_writer)
       end)
       return true
     end,
     previewer = previewers.new_buffer_previewer({
       title = "jq Result",
       define_preview = function(self, entry)
-        local result, err = execute_jq(entry.value, entry.json_input, this.successful_queries)
-        
         -- Clear previous content and highlights
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {})
         vim.api.nvim_buf_clear_namespace(self.state.bufnr, ns_id, 0, -1)
-        
-        if result then
-          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, vim.split(result, "\n"))
-        else
-          local error_lines = vim.split("Error: " .. error, "\n")
-          vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, error_lines)
-        end
+
+				local success_writer = function(lines)	
+				  vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
+				end
+				execute_jq(entry.value, json_input, success_writer)
       end,
     }),
   }):find()

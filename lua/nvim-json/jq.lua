@@ -5,23 +5,26 @@ local function execute_jq(query, input, successful_queries)
   local result = handle:read("*a")
   local success, code = handle:close()
  
+	-- looks like nvim's lua always return true for handle:close()
   print("q", query, "s", success, "c", code, "r", result)
   if success then
-    print("adding...")
-    -- table.insert(successful_queries, 1, query)
     return result, nil
   else
     return nil, result
   end
 end
 
-local function execute_jq_2(query, input)
+local function jq(query, input, success_writer)
+	local result = {}
   local job_id = vim.fn.jobstart({'jq', query}, {
     on_stdout = function(_, data, _)
       for _, line in ipairs(data) do
         table.insert(result, line)
       end
-      print(table.concat(result, "\n"))      
+			if success_writer then
+				success_writer(result)
+			end
+
     end,
     on_stderr = function(_, data, _)
       if data and data[1] and table.getn(data) > 1 then
@@ -43,9 +46,6 @@ local function execute_jq_2(query, input)
   -- Close jq's stdin to signal that no more input will be sent
   vim.fn.chanclose(job_id, 'stdin')
 end
-
--- Example usage
--- execute_jq_2('ke', '{"name": "Neovim", "version": "0.8"}')
 
 return {
   execute_jq = execute_jq,
